@@ -1,0 +1,27 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import path from "path";
+
+export default defineConfig(({ mode }) => ({
+  envDir: path.resolve(__dirname, "../"),
+  server: {
+    host: "::",
+    port: 8080,
+    allowedHosts: [
+      "business.seynova.ai",
+      "business.ctrls.co",
+      ".seynova.ai",
+      ".ctrls.co",
+      "localhost",
+    ],
+    hmr: {
+      overlay: false,
+    },
+  },
+  plugins: [react()].filter(Boolean),
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+}));
