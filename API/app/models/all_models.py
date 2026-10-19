@@ -151,6 +151,11 @@ class User(TimestampMixin, TenantMixin, Base):
     role: Mapped[str] = mapped_column(String(50), default="viewer")  # owner/admin/viewer
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # password reset (SHA-256 of the one-time code, never the code itself)
+    reset_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reset_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reset_code_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
     tenant: Mapped[Tenant] = relationship("Tenant", back_populates="users")
 
     __table_args__ = (

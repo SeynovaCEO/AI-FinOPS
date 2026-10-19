@@ -4,7 +4,7 @@ Authentication schemas.
 
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 from app.core.security import validate_password
 from .base import BaseSchema
@@ -33,13 +33,58 @@ class RefreshToken(BaseModel):
 
 
 class UserRegister(BaseModel):
-    """User registration schema (requires organization)."""
-    email: str
+    """Self-service signup: creates a new organization with the user as its owner."""
+    username: str
+    company_name: str
+    email: EmailStr
     password: str
-    org_slug: str
-    org_admin_name: str
-    role: str = "viewer"
+    confirm_password: str
+
+    @field_validator("username", "company_name")
+    def not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("email")
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
 
     @field_validator("password")
     def validate_password(cls, value: str) -> str:
         return validate_password(value)
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> "UserRegister":
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Forgot password request schema."""
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    """Reset password request schema."""
+    email: str
+    verification_code: str
+    new_password: str
+    confirm_password: str
+
+    @field_validator("new_password")
+    def validate_new_password(cls, value: str) -> str:
+        return validate_password(value)
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> "ResetPasswordRequest":
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
+class MessageResponse(BaseModel):
+    """Generic message response schema."""
+    message: str
