@@ -17,7 +17,7 @@ from app.db.session import SessionLocal
 from app.repositories.user_repo import user_repo
 
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl="/auth/login"
+    tokenUrl=f"{settings.API_V1_STR}/auth/login"
 )
 
 

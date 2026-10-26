@@ -26,7 +26,7 @@ from app.controller import (
     tenant_controller,
     user_operations_controller,
     metrics_controller,
-
+    hardware_controller,
 )
 from app.core.config import settings
 from app.core.logging import setup_logging
@@ -85,6 +85,7 @@ api_router.include_router(cost_allocation_controller)
 api_router.include_router(cost_analyzer_controller)
 api_router.include_router(dashboard_controller)
 api_router.include_router(forecasting_controller)
+api_router.include_router(hardware_controller)
 api_router.include_router(kubernetes_controller)
 api_router.include_router(metrics_controller)
 api_router.include_router(recommendations_controller)

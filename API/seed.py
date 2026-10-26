@@ -10,6 +10,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import math
 import uuid
 
 from dotenv import load_dotenv
@@ -49,6 +50,7 @@ from app.models import (
     AnomalyStatus,
     Team,
     CostAllocationRule,
+    ResourceHourlyMetric,
 )
 
 
@@ -136,6 +138,115 @@ SAMPLE_RECOMMENDATIONS = [
      "Several Azure SQL databases run below 10% DTU utilization.",
      ["Audit database utilization metrics", "Identify consolidation candidates", "Plan migration and test"]),
 ]
+
+# Hardware fleet for the Hardware Orchestration page (mirrors fakedata.json).
+# CPU pools are stored as AcceleratorType.OTHER with extra["category"] = "cpu".
+# (device_id, type, model, vendor, vram_gb, compute_units, $/hr, avg util %, memory used GB, temp C, power W, extra)
+SAMPLE_HARDWARE = [
+    ("gpu-h100-node-01-a", AcceleratorType.GPU, "NVIDIA H100 SXM5 80GB", "NVIDIA", 80, 132, "3.85", 92, 78, 67, 640,
+     {"cluster": "us-east-ai-training", "workload": "Llama-3.3-70B-FP8"}),
+    ("gpu-h100-node-01-b", AcceleratorType.GPU, "NVIDIA H100 SXM5 80GB", "NVIDIA", 80, 132, "3.85", 94, 78, 69, 655,
+     {"cluster": "us-east-ai-training", "workload": "Llama-3.3-70B-FP8"}),
+    ("gpu-a100-inference-02", AcceleratorType.GPU, "NVIDIA A100 SXM4 80GB", "NVIDIA", 80, 108, "2.65", 58, 44, 58, 310,
+     {"cluster": "us-central-serving", "workload": "Mistral-Large-Instruct"}),
+    ("gpu-l40s-rag-embed-01", AcceleratorType.GPU, "NVIDIA L40S 48GB", "NVIDIA", 48, 142, "1.45", 38, 18, 48, 180,
+     {"cluster": "eu-west-embeddings", "workload": "BGE-Large-En-v1.5"}),
+    ("gpu-a100-standby-03", AcceleratorType.GPU, "NVIDIA A100 SXM4 80GB", "NVIDIA", 80, 108, "2.65", 4, 12, 36, 95,
+     {"cluster": "us-central-serving", "workload": "None (Warm Pool)"}),
+    ("tpu-v5e-slice-16a", AcceleratorType.TPU, "Google Cloud TPU v5e (16 chips)", "Google", 256, 16, "19.20", 82, 210, 55, 0,
+     {"region": "us-central1-a", "workload": "Multimodal-Embedding-Distillation", "hbm_throughput_gbs": 680}),
+    ("tpu-v4-pod-slice-8", AcceleratorType.TPU, "Google Cloud TPU v4 (8 chips)", "Google", 256, 8, "9.60", 66, 170, 52, 0,
+     {"region": "us-central2-b", "workload": "Domain-RAG-Adapter-LoRA", "hbm_throughput_gbs": 510}),
+    ("arm-graviton4-pool-01", AcceleratorType.OTHER, "AWS c7g.8xlarge (ARM Neoverse V2)", "AWS", None, 32, "1.16", 78, 48, 0, 0,
+     {"category": "cpu", "arch": "arm", "memory_gb": 64, "role": "Vector Tokenization & ETL"}),
+    ("epyc-genoa-pool-02", AcceleratorType.OTHER, "AMD EPYC 9654 (x86_64)", "AMD", None, 64, "2.45", 59, 150, 0, 0,
+     {"category": "cpu", "arch": "x86", "memory_gb": 256, "role": "Inference Gateway & Routing"}),
+    ("groq-lpu-node-alpha", AcceleratorType.LPU, "Groq LPU Inference Rack", "Groq", None, 64, "1.85", 71, 0, 0, 0,
+     {"workload": "Llama-3.1-8B-Instant", "throughput_tok_sec": 620, "ttft_ms": 95,
+      "cost_per_million_tokens": 0.08, "sram_bandwidth_tbps": 40}),
+    ("groq-lpu-node-beta", AcceleratorType.LPU, "Groq LPU Inference Rack", "Groq", None, 64, "1.85", 64, 0, 0, 0,
+     {"workload": "Mixtral-8x7B-32k", "throughput_tok_sec": 480, "ttft_ms": 130,
+      "cost_per_million_tokens": 0.24, "sram_bandwidth_tbps": 40}),
+]
+
+# Usage profile for the 3 accelerators created by the original seed step 5:
+# device_id -> (avg util %, memory used GB, temp C, power W, extra defaults)
+EXISTING_HARDWARE_PROFILE = {
+    "GPU-H100-001": (17, 22, 41, 210, {"workload": "vllm-deepseek-r1-70b (off-peak)"}),
+    "GPU-A100-002": (71, 52, 61, 340, {"workload": "agent-orchestrator-service"}),
+    "TPU-V5E-001": (3, 2, 33, 0, {"region": "us-central1", "workload": "None (Reserved)", "hbm_throughput_gbs": 0}),
+}
+METRIC_HOURS = 24
+
+
+def seed_hardware(db, tenant: Tenant) -> None:
+    """Seed the accelerator fleet and 24 hours of per-device usage metrics.
+
+    Devices are matched by device_id and metrics are only added when the tenant has none,
+    so the seeder can be re-run safely.
+    """
+    existing = {
+        acc.device_id: acc
+        for acc in db.query(Accelerator).filter(Accelerator.tenant_id == tenant.id).all()
+    }
+    profiles = {}  # device_id -> (accelerator, util, memory, temp, power)
+
+    added = 0
+    for (device_id, acc_type, model, vendor, vram, units, hourly, util, mem, temp, power, extra) in SAMPLE_HARDWARE:
+        acc = existing.get(device_id)
+        if acc is None:
+            acc = Accelerator(
+                tenant_id=tenant.id,
+                accelerator_type=acc_type,
+                model=model,
+                vendor=vendor,
+                device_id=device_id,
+                vram_gb=vram,
+                compute_units=units,
+                status=AcceleratorStatus.AVAILABLE if util < 10 else AcceleratorStatus.IN_USE,
+                hourly_cost_usd=Decimal(hourly),
+                extra=extra,
+            )
+            db.add(acc)
+            added += 1
+        profiles[device_id] = (acc, util, mem, temp, power)
+
+    for device_id, (util, mem, temp, power, extra_defaults) in EXISTING_HARDWARE_PROFILE.items():
+        acc = existing.get(device_id)
+        if acc is not None:
+            acc.extra = {**extra_defaults, **(acc.extra or {})}
+            profiles[device_id] = (acc, util, mem, temp, power)
+    db.flush()
+    print(f"[OK] Seeded {added} accelerators ({len(SAMPLE_HARDWARE) - added} already present).")
+
+    if db.query(ResourceHourlyMetric).filter(ResourceHourlyMetric.tenant_id == tenant.id).count() > 0:
+        print("[OK] Hardware metrics already present.")
+        return
+
+    # Deterministic hourly wobble around each device's average so charts look realistic but stable
+    last_hour = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    rows = []
+    for idx, (acc, util, mem, temp, power) in enumerate(profiles.values()):
+        hourly_cost = acc.hourly_cost_usd or Decimal("0")
+        swing = 1.5 if util < 10 else 4.0
+        for h in range(METRIC_HOURS):
+            wave = math.sin(h * 0.7 + idx)
+            hour_util = max(0.0, min(100.0, util + swing * wave))
+            rows.append(ResourceHourlyMetric(
+                tenant_id=tenant.id,
+                accelerator_id=acc.id,
+                hour_ts=last_hour - timedelta(hours=METRIC_HOURS - 1 - h),
+                avg_utilization_pct=Decimal(f"{hour_util:.2f}"),
+                max_utilization_pct=Decimal(f"{min(100.0, hour_util + 5):.2f}"),
+                avg_memory_used_gb=Decimal(f"{mem * (1 + 0.03 * wave):.3f}"),
+                peak_memory_gb=Decimal(f"{mem * 1.05:.3f}"),
+                avg_power_watts=Decimal(f"{power * (1 + 0.04 * wave):.2f}"),
+                avg_temp_celsius=Decimal(f"{temp + 1.5 * wave:.2f}"),
+                cost_usd=hourly_cost,
+                idle_fraction=Decimal(f"{max(0.0, 1 - hour_util / 100):.4f}"),
+            ))
+    db.add_all(rows)
+    print(f"[OK] Seeded {len(rows)} hourly hardware metrics ({len(profiles)} devices x {METRIC_HOURS} hours).")
 
 
 def _month_start(months_back: int) -> datetime:
@@ -283,14 +394,14 @@ def seed_database() -> None:
     print("=" * 60)
 
     # 1. Create all schema tables
-    print("[1/7] Creating database tables...")
+    print("[1/8] Creating database tables...")
     Base.metadata.create_all(bind=engine)
     print("[OK] Database tables verified/created successfully.")
 
     db = SessionLocal()
     try:
         # 2. Check / Create Tenant
-        print("[2/7] Checking tenant organization...")
+        print("[2/8] Checking tenant organization...")
         tenant_slug = "finops-corp"
         tenant = db.query(Tenant).filter(Tenant.slug == tenant_slug).first()
 
@@ -313,7 +424,7 @@ def seed_database() -> None:
             print(f"[OK] Existing Organization found: '{tenant.name}' (ID: {tenant.id})")
 
         # 3. Check / Create Test User
-        print("[3/7] Checking test user account...")
+        print("[3/8] Checking test user account...")
         test_email = "testuser@finops.com"
         test_password = "admin@123"
 
@@ -341,7 +452,7 @@ def seed_database() -> None:
             print(f"[OK] Updated existing Test User: {test_email}")
 
         # 4. Seed Cloud Accounts
-        print("[4/7] Seeding multi-cloud accounts...")
+        print("[4/8] Seeding multi-cloud accounts...")
         existing_accounts = db.query(CloudAccount).filter(CloudAccount.tenant_id == tenant.id).count()
         if existing_accounts == 0:
             aws_acc = CloudAccount(
@@ -375,7 +486,7 @@ def seed_database() -> None:
             print(f"[OK] Cloud accounts already present ({existing_accounts} accounts).")
 
         # 5. Seed Accelerators (GPU/TPU/LPU) & Kubernetes Infrastructure
-        print("[5/7] Seeding AI Accelerators & K8s clusters...")
+        print("[5/8] Seeding AI Accelerators & K8s clusters...")
         existing_clusters = db.query(K8sCluster).filter(K8sCluster.tenant_id == tenant.id).count()
         if existing_clusters == 0:
             cluster = K8sCluster(
@@ -468,7 +579,7 @@ def seed_database() -> None:
             print("[OK] Seeded K8s Clusters, Nodes, Pods, and AI Accelerators (H100, A100, TPU v5e).")
 
         # 6. Seed AI Agents, Jobs, Cost Items, Budgets, and Recommendations
-        print("[6/7] Seeding AI Agents, Budgets, Recommendations, and Anomalies...")
+        print("[6/8] Seeding AI Agents, Budgets, Recommendations, and Anomalies...")
         existing_agents = db.query(Agent).filter(Agent.tenant_id == tenant.id).count()
         if existing_agents == 0:
             agent1 = Agent(
@@ -561,8 +672,12 @@ def seed_database() -> None:
             print("[OK] Seeded AI Agents, Jobs, Budget, Recommendations, and Anomalies.")
 
         # 7. Seed cost data, teams, budgets and anomalies used by the cost pages
-        print("[7/7] Seeding cost line items, teams, budgets, anomalies, and recommendations...")
+        print("[7/8] Seeding cost line items, teams, budgets, anomalies, and recommendations...")
         seed_cost_data(db, tenant)
+
+        # 8. Seed the hardware fleet and its usage metrics
+        print("[8/8] Seeding hardware fleet and hourly usage metrics...")
+        seed_hardware(db, tenant)
 
         db.commit()
         print("\n" + "=" * 60)

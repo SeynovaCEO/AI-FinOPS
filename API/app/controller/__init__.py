@@ -16,6 +16,7 @@ from .users import users_controller
 from .tenant import tenant_controller
 from .user_operations import user_operations_controller
 from .metrics import metrics_controller
+from .hardware import hardware_controller
 
 __all__ = [
     "auth_controller",
@@ -35,5 +36,6 @@ __all__ = [
     "forecasting_controller",
     "user_operations_controller",
     "tenant_controller",
+    "hardware_controller",
     "metrics_controller"
 ]

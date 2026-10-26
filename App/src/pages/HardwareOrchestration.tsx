@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { 
   Cpu, 
   Zap, 
@@ -33,26 +35,18 @@ import { cn } from "@/lib/utils";
 import { PageSkeleton } from "@/components/ui/Skeletons";
 
 export default function HardwareOrchestration() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"gpu" | "mpu" | "cpu" | "lpu">("gpu");
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const res = await fetch("/fakedata.json");
-        const json = await res.json();
-        setData(json.hardwareOrchestration);
-      } catch (e) {
-        console.error("Failed to load hardware orchestration data", e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, []);
+  // Summary, per-type fleet details and savings suggestions, computed by the API from the database
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["hardware-overview"],
+    queryFn: () => api.get<any>("/hardware/overview"),
+  });
 
-  if (loading || !data) return <PageSkeleton />;
+  if (isLoading) return <PageSkeleton />;
+  if (isError || !data) {
+    return <p className="py-8 text-center text-sm text-muted-foreground">Could not load hardware data. Please refresh the page.</p>;
+  }
 
   const { summary, accelerators, recommendations } = data;
   const currentCategory = accelerators[activeTab];
@@ -75,7 +69,7 @@ export default function HardwareOrchestration() {
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400 border border-emerald-500/20">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            Telemetry: Live (DCGM / Prometheus)
+            Telemetry: last {summary.usageWindowHours}h averages
           </span>
         </div>
       </div>
@@ -127,7 +121,7 @@ export default function HardwareOrchestration() {
           </div>
           <div className="text-2xl font-bold text-primary">{formatCurrency(summary.potentialMonthlySavings)}/mo</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            Via idle shutdown & LPU/ARM arbitrage
+            Via idle shutdown, right-sizing & ARM migration
           </div>
         </div>
       </div>
@@ -194,7 +188,7 @@ export default function HardwareOrchestration() {
           <div className="finops-card p-5">
             <h3 className="text-sm font-semibold mb-4 flex items-center justify-between">
               <span>Active NVIDIA Accelerator Fleet</span>
-              <span className="text-xs text-muted-foreground font-normal">Auto-polled every 10s</span>
+              <span className="text-xs text-muted-foreground font-normal">Averages over the last {summary.usageWindowHours}h</span>
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
@@ -398,7 +392,9 @@ export default function HardwareOrchestration() {
             </div>
             <div className="finops-card p-4">
               <div className="text-xs text-muted-foreground">Cost per Million Tokens</div>
-              <div className="text-xl font-bold mt-1 text-primary">$0.08 / 1M tokens</div>
+              <div className="text-xl font-bold mt-1 text-primary">
+                {currentCategory.overview.minCostPerMillionTokens != null ? `$${currentCategory.overview.minCostPerMillionTokens} / 1M tokens` : "—"}
+              </div>
               <div className="text-xs text-emerald-400 mt-0.5">70% cheaper than traditional GPU inference</div>
             </div>
           </div>
