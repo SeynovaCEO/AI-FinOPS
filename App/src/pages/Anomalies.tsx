@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { useFinOpsData } from "@/hooks/useFinOpsData";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { api } from "@/lib/api";
 import { PageSkeleton } from "@/components/ui/Skeletons";
 import { SeverityBadge } from "@/components/ui/StatusBadge";
 import { Sparkline } from "@/components/charts/Sparkline";
@@ -7,22 +9,61 @@ import { cn } from "@/lib/utils";
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, ZAxis } from "recharts";
 
 type StatusFilter = "active" | "acknowledged" | "resolved";
+type Severity = "Critical" | "High" | "Medium" | "Low";
+
+/** Shape returned by GET /api/anomalies (Decimal fields arrive as strings). */
+interface ApiAnomaly {
+  id: string;
+  service: string;
+  severity: Severity;
+  spike: string | number;
+  description: string;
+  detected_at: string;
+  data: number[];
+  status: "open" | "acknowledged" | "resolved";
+}
+
+const STATUS_TO_FILTER: Record<ApiAnomaly["status"], StatusFilter> = {
+  open: "active",
+  acknowledged: "acknowledged",
+  resolved: "resolved",
+};
 
 export default function Anomalies() {
-  const { data, loading } = useFinOpsData();
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<StatusFilter>("active");
-  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
-  const [ackIds, setAckIds] = useState<Set<string>>(new Set());
 
-  if (loading || !data) return <PageSkeleton />;
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["anomalies"],
+    queryFn: () => api.get<ApiAnomaly[]>("/anomalies"),
+  });
 
-  const anomalies = data.anomalies.map((a) => ({
-    ...a,
-    displayStatus: resolvedIds.has(a.id) ? "resolved" as const : ackIds.has(a.id) ? "acknowledged" as const : "active" as const,
-  }));
+  const updateStatus = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "acknowledge" | "resolve" }) =>
+      api.put<ApiAnomaly>(`/anomalies/${id}/${action}`),
+    onSuccess: (_, { action }) => {
+      queryClient.invalidateQueries({ queryKey: ["anomalies"] });
+      toast.success(action === "acknowledge" ? "Anomaly acknowledged" : "Anomaly resolved");
+    },
+    onError: () => toast.error("Could not update anomaly. Please try again."),
+  });
+
+  if (isLoading) return <PageSkeleton />;
+  if (isError || !data) {
+    return <p className="py-8 text-center text-sm text-muted-foreground">Could not load anomalies. Please refresh the page.</p>;
+  }
+
+  const anomalies = data
+    .map((a) => ({
+      ...a,
+      spike: Number(a.spike),
+      detectedAt: a.detected_at,
+      displayStatus: STATUS_TO_FILTER[a.status],
+    }))
+    .sort((a, b) => new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime());
 
   const filtered = anomalies.filter((a) => a.displayStatus === filter);
-  const sevCounts = { Critical: 0, High: 0, Medium: 0 };
+  const sevCounts: Record<Severity, number> = { Critical: 0, High: 0, Medium: 0, Low: 0 };
   anomalies.filter((a) => a.displayStatus === "active").forEach((a) => sevCounts[a.severity]++);
 
   const scatterData = anomalies.map((a, i) => ({
@@ -43,7 +84,7 @@ export default function Anomalies() {
             <p className="text-3xl font-bold text-destructive">{anomalies.filter((a) => a.displayStatus === "active").length}</p>
           </div>
           <div className="flex gap-3">
-            {(["Critical", "High", "Medium"] as const).map((s) => (
+            {(["Critical", "High", "Medium", "Low"] as const).map((s) => (
               <div key={s} className="text-center">
                 <p className="text-lg font-bold">{sevCounts[s]}</p>
                 <SeverityBadge severity={s} />
@@ -81,12 +122,12 @@ export default function Anomalies() {
             <div className="mt-3 flex gap-2">
               {a.displayStatus === "active" && (
                 <>
-                  <button onClick={() => setAckIds((s) => new Set(s).add(a.id))} className="rounded-md bg-warning/10 px-3 py-1 text-xs font-medium text-warning hover:bg-warning/20">Acknowledge</button>
-                  <button onClick={() => setResolvedIds((s) => new Set(s).add(a.id))} className="rounded-md bg-success/10 px-3 py-1 text-xs font-medium text-success hover:bg-success/20">Resolve</button>
+                  <button disabled={updateStatus.isPending} onClick={() => updateStatus.mutate({ id: a.id, action: "acknowledge" })} className="rounded-md bg-warning/10 px-3 py-1 text-xs font-medium text-warning hover:bg-warning/20 disabled:opacity-50">Acknowledge</button>
+                  <button disabled={updateStatus.isPending} onClick={() => updateStatus.mutate({ id: a.id, action: "resolve" })} className="rounded-md bg-success/10 px-3 py-1 text-xs font-medium text-success hover:bg-success/20 disabled:opacity-50">Resolve</button>
                 </>
               )}
               {a.displayStatus === "acknowledged" && (
-                <button onClick={() => setResolvedIds((s) => new Set(s).add(a.id))} className="rounded-md bg-success/10 px-3 py-1 text-xs font-medium text-success hover:bg-success/20">Resolve</button>
+                <button disabled={updateStatus.isPending} onClick={() => updateStatus.mutate({ id: a.id, action: "resolve" })} className="rounded-md bg-success/10 px-3 py-1 text-xs font-medium text-success hover:bg-success/20 disabled:opacity-50">Resolve</button>
               )}
               <button className="rounded-md bg-primary/10 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/20">Investigate</button>
             </div>

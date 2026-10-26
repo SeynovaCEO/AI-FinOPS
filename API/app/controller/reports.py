@@ -2,9 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Body, status
+from fastapi import APIRouter, Depends, Body, status
 
-reports_controller = APIRouter(prefix="/reports", tags=["Reports"])
+from app.api.deps import get_current_user
+
+reports_controller = APIRouter(prefix="/reports", tags=["Reports"], dependencies=[Depends(get_current_user)])
 
 
 @reports_controller.get("")

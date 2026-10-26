@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app import schemas
 from app.api import deps
 from app.services.auth_service import AuthService
+from app.repositories.tenant_repo import tenant_repo
 
 auth_controller = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -60,12 +61,16 @@ def register(
     db: Session = Depends(deps.get_db),
     user_reg: schemas.UserRegister,
 ) -> schemas.User:
-    """Sign up: create a new organization with this user as its owner.
+    """Register a new user in an existing organization.
 
-    Required fields: username, company_name, email, password, confirm_password.
+    Required fields:
+    - email: User's email
+    - password: User's password
+    - org_slug: Organization slug (e.g., 'my-company')
+    - org_admin_name: Organization admin's name (for verification)
     """
     try:
-        user = AuthService.register_user(db, user_reg)
+        user = AuthService.register_user(db, user_reg, tenant_repo)
         return user
     except ValueError as e:
         raise HTTPException(

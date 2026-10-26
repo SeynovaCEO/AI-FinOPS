@@ -2,9 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Body, status
+from fastapi import APIRouter, Depends, Body, status
 
-virtual_tags_controller = APIRouter(prefix="/virtual-tags", tags=["Virtual Tags"])
+from app.api.deps import get_current_user
+
+virtual_tags_controller = APIRouter(prefix="/virtual-tags", tags=["Virtual Tags"], dependencies=[Depends(get_current_user)])
 
 
 @virtual_tags_controller.get("")

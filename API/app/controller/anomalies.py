@@ -23,6 +23,16 @@ def get_anomalies(
     return anomalies_service.get_anomalies(db, current_user.tenant_id)
 
 
+# Declared before "/{anomaly_id}" so the literal path is not captured as an ID.
+@anomalies_controller.get("/severity-counts", response_model=list[schemas.AnomalySeverity])
+def get_anomalies_severity(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+) -> list[schemas.AnomalySeverity]:
+    """Get anomaly counts by severity."""
+    return anomalies_service.get_anomalies_severity(db, current_user.tenant_id)
+
+
 @anomalies_controller.get("/{anomaly_id}", response_model=schemas.Anomaly)
 def get_anomaly(
     anomaly_id: str,
@@ -44,15 +54,6 @@ def filter_anomalies(
 ) -> list[schemas.Anomaly]:
     """Filter anomalies by severity."""
     return anomalies_service.filter_anomalies(db, current_user.tenant_id, severity)
-
-
-@anomalies_controller.get("/severity-counts", response_model=list[schemas.AnomalySeverity])
-def get_anomalies_severity(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-) -> list[schemas.AnomalySeverity]:
-    """Get anomaly counts by severity."""
-    return anomalies_service.get_anomalies_severity(db, current_user.tenant_id)
 
 
 @anomalies_controller.put("/{anomaly_id}/acknowledge", response_model=schemas.Anomaly)

@@ -2,9 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Depends, Body
 
-forecasting_controller = APIRouter(prefix="/forecasting", tags=["Forecasting"])
+from app.api.deps import get_current_user
+
+forecasting_controller = APIRouter(prefix="/forecasting", tags=["Forecasting"], dependencies=[Depends(get_current_user)])
 
 
 @forecasting_controller.get("/forecast")

@@ -42,7 +42,7 @@ export function StatusBadge({ status, variant = "muted" }: StatusBadgeProps) {
 }
 
 interface SeverityBadgeProps {
-  severity: "Critical" | "High" | "Medium";
+  severity: "Critical" | "High" | "Medium" | "Low";
 }
 
 export function SeverityBadge({ severity }: SeverityBadgeProps) {

@@ -14,7 +14,7 @@ const resolveApiBase = (): string => {
   return import.meta.env.DEV ? "http://localhost:8000/api" : "/api";
 };
 
-const API_BASE_URL = resolveApiBase();
+export const API_BASE_URL = resolveApiBase();
 
 export interface LoginPayload {
   email?: string;

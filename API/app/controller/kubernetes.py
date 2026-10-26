@@ -2,9 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-kubernetes_controller = APIRouter(prefix="/kubernetes", tags=["Kubernetes"])
+from app.api.deps import get_current_user
+
+kubernetes_controller = APIRouter(prefix="/kubernetes", tags=["Kubernetes"], dependencies=[Depends(get_current_user)])
 
 
 @kubernetes_controller.get("/clusters")

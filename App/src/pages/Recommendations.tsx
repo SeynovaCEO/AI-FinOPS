@@ -1,12 +1,26 @@
 import { useState } from "react";
-import { useFinOpsData } from "@/hooks/useFinOpsData";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { api } from "@/lib/api";
 import { PageSkeleton } from "@/components/ui/Skeletons";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatCurrency } from "@/utils/format";
 import { cn } from "@/lib/utils";
-import type { Recommendation } from "@/types/finops.types";
 
 type FilterTab = "all" | "open" | "in_progress" | "done";
+
+/** Shape returned by GET /api/recommendations (Decimal fields arrive as strings). */
+interface ApiRecommendation {
+  id: string;
+  title: string;
+  category: string;
+  impact: "Low" | "Medium" | "High";
+  effort: "Low" | "Medium" | "High";
+  savings: string | number;
+  description: string | null;
+  status: "open" | "in_progress" | "done" | "dismissed";
+  steps: string[];
+}
 
 const effortColors: Record<string, string> = {
   Low: "success",
@@ -15,21 +29,42 @@ const effortColors: Record<string, string> = {
 };
 
 export default function Recommendations() {
-  const { data, loading } = useFinOpsData();
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterTab>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [statuses, setStatuses] = useState<Record<string, Recommendation["status"]>>({});
 
-  if (loading || !data) return <PageSkeleton />;
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["recommendations"],
+    queryFn: () => api.get<ApiRecommendation[]>("/recommendations"),
+  });
 
-  const recs = data.recommendations.map((r) => ({ ...r, status: statuses[r.id] ?? r.status }));
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "in_progress" | "done" }) =>
+      status === "done"
+        ? api.post<ApiRecommendation>(`/recommendations/${id}/apply`)
+        : api.put<ApiRecommendation>(`/recommendations/${id}/status`, { status }),
+    onSuccess: (_, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ["recommendations"] });
+      toast.success(status === "done" ? "Recommendation applied" : "Marked as in progress");
+    },
+    onError: () => toast.error("Could not update recommendation. Please try again."),
+  });
+
+  if (isLoading) return <PageSkeleton />;
+  if (isError || !data) {
+    return <p className="py-8 text-center text-sm text-muted-foreground">Could not load recommendations. Please refresh the page.</p>;
+  }
+
+  // Dismissed recommendations are hidden and excluded from the savings totals
+  const recs = data
+    .filter((r) => r.status !== "dismissed")
+    .map((r) => ({ ...r, savings: Number(r.savings) }));
   const filtered = filter === "all" ? recs : recs.filter((r) => r.status === filter);
   const totalSavings = recs.reduce((s, r) => s + r.savings, 0);
   const implementedSavings = recs.filter((r) => r.status === "done").reduce((s, r) => s + r.savings, 0);
+  const implementedPct = totalSavings > 0 ? (implementedSavings / totalSavings) * 100 : 0;
 
-  const setStatus = (id: string, status: Recommendation["status"]) => {
-    setStatuses((prev) => ({ ...prev, [id]: status }));
-  };
+  const setStatus = (id: string, status: "in_progress" | "done") => updateStatus.mutate({ id, status });
 
   const tabs: { value: FilterTab; label: string }[] = [
     { value: "all", label: "All" },
@@ -48,10 +83,10 @@ export default function Recommendations() {
         <div className="mt-3">
           <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
             <span>Implemented: {formatCurrency(implementedSavings)}</span>
-            <span>{Math.round((implementedSavings / totalSavings) * 100)}%</span>
+            <span>{Math.round(implementedPct)}%</span>
           </div>
           <div className="h-2 rounded-full bg-muted">
-            <div className="h-full rounded-full bg-success transition-all" style={{ width: `${(implementedSavings / totalSavings) * 100}%` }} />
+            <div className="h-full rounded-full bg-success transition-all" style={{ width: `${implementedPct}%` }} />
           </div>
         </div>
       </div>
@@ -81,7 +116,8 @@ export default function Recommendations() {
 
             {expanded === rec.id && (
               <div className="rounded-lg bg-accent/50 p-3 space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground">Implementation Steps:</p>
+                {rec.description && <p className="pb-1 text-xs text-muted-foreground">{rec.description}</p>}
+                {rec.steps.length > 0 && <p className="text-xs font-semibold text-muted-foreground">Implementation Steps:</p>}
                 {rec.steps.map((step, i) => (
                   <p key={i} className="text-xs text-muted-foreground">{i + 1}. {step}</p>
                 ))}
@@ -92,11 +128,11 @@ export default function Recommendations() {
               <button onClick={() => setExpanded(expanded === rec.id ? null : rec.id)} className="rounded-md bg-accent px-3 py-1 text-xs font-medium hover:bg-accent/80">
                 {expanded === rec.id ? "Collapse" : "Details"}
               </button>
-              {rec.status !== "done" && (
-                <button onClick={() => setStatus(rec.id, "in_progress")} className="rounded-md bg-primary/10 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/20">In Progress</button>
+              {rec.status === "open" && (
+                <button disabled={updateStatus.isPending} onClick={() => setStatus(rec.id, "in_progress")} className="rounded-md bg-primary/10 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50">In Progress</button>
               )}
               {rec.status !== "done" && (
-                <button onClick={() => setStatus(rec.id, "done")} className="rounded-md bg-success/10 px-3 py-1 text-xs font-medium text-success hover:bg-success/20">Apply</button>
+                <button disabled={updateStatus.isPending} onClick={() => setStatus(rec.id, "done")} className="rounded-md bg-success/10 px-3 py-1 text-xs font-medium text-success hover:bg-success/20 disabled:opacity-50">Apply</button>
               )}
             </div>
           </div>

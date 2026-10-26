@@ -91,7 +91,7 @@ def get_variance_analysis(
     return cost_allocation_service.get_variance_analysis(db, current_user.tenant_id)
 
 
-@cost_allocation_controller.get("/sample")
+@cost_allocation_controller.get("/sample", dependencies=[Depends(get_current_user)])
 def sample_cost_allocation():
     return {
         'data': [],

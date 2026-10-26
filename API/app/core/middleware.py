@@ -15,6 +15,17 @@ from app.core.logging import structlog
 
 logger = structlog.get_logger(__name__)
 
+# Headers whose values must never be written to logs (credentials / session data).
+SENSITIVE_HEADERS = {"authorization", "cookie", "set-cookie", "x-api-key", "proxy-authorization"}
+
+
+def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
+    """Return a copy of headers with credential values replaced."""
+    return {
+        name: "[REDACTED]" if name.lower() in SENSITIVE_HEADERS else value
+        for name, value in headers.items()
+    }
+
 
 class TenantMiddleware(BaseHTTPMiddleware):
     """Middleware to inject tenant_id from JWT token into request state."""
@@ -49,7 +60,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             "Request started",
             method=request.method,
             url=str(request.url),
-            headers=dict(request.headers),
+            headers=_redact_headers(dict(request.headers)),
             tenant_id=getattr(request.state, "tenant_id", None),
         )
 

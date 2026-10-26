@@ -20,7 +20,10 @@ export function useFinOpsData(): UseFinOpsDataReturn {
       try {
         // Call the metrics API endpoint instead of static file
         const endpoint = `${API_BASE_URL}/metrics/all`;
-        const res = await fetch(endpoint);
+        const token = localStorage.getItem("access_token");
+        const res = await fetch(endpoint, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (!res.ok) throw new Error(`Failed to fetch data: ${res.status}`);
         const json: FinOpsData = await res.json();
         setData(json);

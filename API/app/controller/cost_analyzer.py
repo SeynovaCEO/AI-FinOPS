@@ -31,6 +31,15 @@ def filter_services(
     return cost_analyzer_service.filter_services(db, current_user.tenant_id, provider, minCost)
 
 
+# Declared before "/services/{service_id}" so "export" is not captured as an ID.
+@cost_analyzer_controller.get("/services/export", response_model=schemas.ServiceExportResponse)
+def export_services(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+) -> schemas.ServiceExportResponse:
+    return cost_analyzer_service.export_services(db, current_user.tenant_id)
+
+
 @cost_analyzer_controller.get("/services/{service_id}", response_model=schemas.ServiceCost)
 def get_service(
     service_id: str,
@@ -65,14 +74,6 @@ def get_usage_metrics(
     current_user = Depends(get_current_user)
 ) -> list[schemas.UsageMetric]:
     return cost_analyzer_service.get_usage_metrics(db, current_user.tenant_id)
-
-
-@cost_analyzer_controller.get("/services/export", response_model=schemas.ServiceExportResponse)
-def export_services(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-) -> schemas.ServiceExportResponse:
-    return cost_analyzer_service.export_services(db, current_user.tenant_id)
 
 
 @cost_analyzer_controller.get("/provider-comparison", response_model=list[schemas.ProviderComparison])

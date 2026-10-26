@@ -28,8 +28,9 @@ class BaseRepository(Generic[ModelType]):
         return db.query(self.model).offset(skip).limit(limit).all()
 
     def create(self, db: Session, *, obj_in) -> ModelType:
-        """Create new record."""
-        db_obj = self.model(**obj_in.dict())
+        """Create new record from a Pydantic schema or a plain dict."""
+        data = obj_in if isinstance(obj_in, dict) else obj_in.dict()
+        db_obj = self.model(**data)
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
@@ -38,8 +39,8 @@ class BaseRepository(Generic[ModelType]):
     def update(
         self, db: Session, *, db_obj: ModelType, obj_in
     ) -> ModelType:
-        """Update existing record."""
-        update_data = obj_in.dict(exclude_unset=True)
+        """Update existing record from a Pydantic schema or a plain dict."""
+        update_data = obj_in if isinstance(obj_in, dict) else obj_in.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_obj, field, value)
         db.add(db_obj)

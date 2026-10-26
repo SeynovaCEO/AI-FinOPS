@@ -2,9 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-unit_economics_controller = APIRouter(prefix="/unit-economics", tags=["Unit Economics"])
+from app.api.deps import get_current_user
+
+unit_economics_controller = APIRouter(prefix="/unit-economics", tags=["Unit Economics"], dependencies=[Depends(get_current_user)])
 
 
 @unit_economics_controller.get("/summary")

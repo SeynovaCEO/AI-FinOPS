@@ -99,7 +99,10 @@ export default function AgentOps() {
       try {
         setLoading(true);
         try {
-          const response = await fetch(API_URL);
+          const token = localStorage.getItem("access_token");
+          const response = await fetch(API_URL, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
 
           if (!response.ok) {
             throw new Error(`Request failed with status ${response.status}`);

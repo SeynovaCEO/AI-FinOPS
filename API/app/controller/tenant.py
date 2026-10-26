@@ -21,7 +21,6 @@ def register_organization(
 ) -> Any:
     """Register a new organization with admin user."""
     try:
-        print("Creating organization with data:", org_in)
         tenant, admin_user = TenantService.create_tenant_with_admin(db, org_in)
         return {
             "message": "Organization created successfully",
@@ -43,6 +42,7 @@ def create_tenant(
     *,
     db: Session = Depends(deps.get_db),
     tenant_in: schemas.TenantCreate,
+    current_user: schemas.User = Depends(deps.get_current_user),
 ) -> Any:
     """Create a new tenant (organization) without admin."""
     try:
@@ -60,6 +60,7 @@ def create_tenant_alias(
     *,
     db: Session = Depends(deps.get_db),
     tenant_in: schemas.TenantCreate,
+    current_user: schemas.User = Depends(deps.get_current_user),
 ) -> Any:
     """Alias endpoint for tenant creation."""
     try:

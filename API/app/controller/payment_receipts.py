@@ -2,9 +2,11 @@
 
 from typing import Any
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 
-payment_receipts_controller = APIRouter(prefix="/payment-receipts", tags=["Payment Receipts"])
+from app.api.deps import get_current_user
+
+payment_receipts_controller = APIRouter(prefix="/payment-receipts", tags=["Payment Receipts"], dependencies=[Depends(get_current_user)])
 
 
 @payment_receipts_controller.get("")

@@ -3,9 +3,11 @@
 import json
 from typing import Any
 from pathlib import Path
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-metrics_controller = APIRouter(prefix="/metrics", tags=["Metrics"])
+from app.api.deps import get_current_user
+
+metrics_controller = APIRouter(prefix="/metrics", tags=["Metrics"], dependencies=[Depends(get_current_user)])
 
 # Load data once at startup
 _metrics_cache = None

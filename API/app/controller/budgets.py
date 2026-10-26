@@ -21,6 +21,25 @@ def get_budgets(
     return budget_service.get_budgets(db, current_user.tenant_id)
 
 
+# Literal paths are declared before "/{budget_id}" so they are not captured as an ID.
+@budgets_controller.get("/status", response_model=list[schemas.BudgetStatus])
+def get_budget_status(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+) -> list[schemas.BudgetStatus]:
+    """Get budget status for all budgets."""
+    return budget_service.get_budget_status(db, current_user.tenant_id)
+
+
+@budgets_controller.get("/daily-burn-rate", response_model=list[schemas.DailyBurnRate])
+def get_budget_daily_burn_rate(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+) -> list[schemas.DailyBurnRate]:
+    """Get daily burn rate for budgets."""
+    return budget_service.get_budget_daily_burn_rate(db, current_user.tenant_id)
+
+
 @budgets_controller.get("/{budget_id}", response_model=schemas.Budget)
 def get_budget(
     budget_id: str,
@@ -68,24 +87,6 @@ def delete_budget(
     if not budget_service.delete_budget(db, current_user.tenant_id, budget_id):
         raise HTTPException(status_code=404, detail="Budget not found")
     return {"message": f"Budget {budget_id} deleted."}
-
-
-@budgets_controller.get("/status", response_model=list[schemas.BudgetStatus])
-def get_budget_status(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-) -> list[schemas.BudgetStatus]:
-    """Get budget status for all budgets."""
-    return budget_service.get_budget_status(db, current_user.tenant_id)
-
-
-@budgets_controller.get("/daily-burn-rate", response_model=list[schemas.DailyBurnRate])
-def get_budget_daily_burn_rate(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-) -> list[schemas.DailyBurnRate]:
-    """Get daily burn rate for budgets."""
-    return budget_service.get_budget_daily_burn_rate(db, current_user.tenant_id)
 
 
 @budgets_controller.post("/{budget_id}/alerts", status_code=status.HTTP_201_CREATED)
