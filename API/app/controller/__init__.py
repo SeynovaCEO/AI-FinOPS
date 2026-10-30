@@ -16,6 +16,8 @@ from .users import users_controller
 from .tenant import tenant_controller
 from .user_operations import user_operations_controller
 from .metrics import metrics_controller
+from .intelligence import intelligence_controller
+from .finops_agent import agent_controller
 
 __all__ = [
     "auth_controller",
@@ -35,5 +37,7 @@ __all__ = [
     "forecasting_controller",
     "user_operations_controller",
     "tenant_controller",
-    "metrics_controller"
+    "metrics_controller",
+    "intelligence_controller",
+    "agent_controller",
 ]
